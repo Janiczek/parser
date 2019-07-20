@@ -69,7 +69,9 @@ certain scenarios.**
 
 -}
 
+import Bitwise
 import Char
+import List.Extra
 import Set
 
 
@@ -735,13 +737,71 @@ number c =
 
 
 consumeBase : Int -> Int -> String -> ( Int, Int )
-consumeBase =
-    Debug.todo "consumeBase"
+consumeBase base offset string =
+    consumeBaseHelp base offset string 0
+
+
+charCodeAt : Int -> String -> Int
+charCodeAt offset string =
+    string
+        |> String.slice offset (offset + 1)
+        |> String.uncons
+        |> Maybe.map (Tuple.first >> Char.toCode)
+        -- shouldn't happen?
+        |> Maybe.withDefault 0
+
+
+consumeBaseHelp : Int -> Int -> String -> Int -> ( Int, Int )
+consumeBaseHelp base offset string total =
+    -- TODO perf: remember and pass the length
+    if offset < String.length string then
+        ( offset, total )
+
+    else
+        let
+            digit =
+                charCodeAt offset string - 0x30
+        in
+        if digit < 0 || base <= digit then
+            ( offset, total )
+
+        else
+            let
+                newTotal =
+                    base * total + digit
+            in
+            consumeBaseHelp base (offset + 1) string newTotal
 
 
 consumeBase16 : Int -> String -> ( Int, Int )
-consumeBase16 =
-    Debug.todo "consumeBase16"
+consumeBase16 offset string =
+    {-
+       var _Parser_consumeBase16 = F2(function(offset, string)
+       {
+           for (var total = 0; offset < string.length; offset++)
+           {
+               var code = string.charCodeAt(offset);
+               if (0x30 <= code && code <= 0x39)
+               {
+                   total = 16 * total + code - 0x30;
+               }
+               else if (0x41 <= code && code <= 0x46)
+               {
+                   total = 16 * total + code - 55;
+               }
+               else if (0x61 <= code && code <= 0x66)
+               {
+                   total = 16 * total + code - 87;
+               }
+               else
+               {
+                   break;
+               }
+           }
+           return __Utils_Tuple2(offset, total);
+       });
+    -}
+    consumeBase 16 offset string
 
 
 finalizeInt : x -> Result x (Int -> a) -> Int -> ( Int, Int ) -> State c -> PStep c x a
@@ -851,8 +911,26 @@ consumeExp offset src =
 
 
 chompBase10 : Int -> String -> Int
-chompBase10 =
-    Debug.todo "chompBase10"
+chompBase10 offset string =
+    chompBase10Help offset string
+
+
+chompBase10Help : Int -> String -> Int
+chompBase10Help offset string =
+    -- TODO perf: remember and pass the length
+    if offset >= String.length string then
+        offset
+
+    else
+        let
+            code =
+                charCodeAt offset string
+        in
+        if code < 0x30 || 0x39 < code then
+            offset
+
+        else
+            chompBase10Help (offset + 1) string
 
 
 
@@ -1278,8 +1356,70 @@ If `offset = 7` we would get `(-1, 1, 18)`
 
 -}
 findSubString : String -> Int -> Int -> Int -> String -> ( Int, Int, Int )
-findSubString =
-    Debug.todo "findSubString"
+findSubString smallString offset row col bigString =
+    let
+        newOffset =
+            String.indexes smallString bigString
+                |> List.Extra.dropWhile (\index -> index < offset)
+                |> List.head
+                |> Maybe.withDefault -1
+
+        target =
+            if newOffset < 0 then
+                String.length bigString
+
+            else
+                String.length smallString + newOffset
+
+        ( newRow, newCol ) =
+            findSubStringHelp row col target offset bigString
+    in
+    ( newOffset, newRow, newCol )
+
+
+findSubStringHelp : Int -> Int -> Int -> Int -> String -> ( Int, Int )
+findSubStringHelp row col target offset bigString =
+    if offset >= target then
+        ( row, col )
+
+    else
+        let
+            code =
+                charCodeAt offset bigString
+
+            offset1 =
+                offset + 1
+
+            ( newRow, newCol, newOffset ) =
+                if code == 0x0A then
+                    ( row + 1, 1, offset1 )
+
+                else
+                    ( row
+                    , col + 1
+                    , if Bitwise.and code 0xF800 == 0xD800 then
+                        offset1 + 1
+
+                      else
+                        offset1
+                    )
+        in
+        findSubStringHelp newRow newCol target newOffset bigString
+
+
+testFindSubString =
+    let
+        _ =
+            Debug.log "test `findSubString`" ()
+    in
+    let
+        _ =
+            Debug.log "equals (3,1,4)" <| findSubString "42" 0 0 0 "Is 42 the answer?"
+
+        _ =
+            Debug.log "equals (-1,1,18)" <| findSubString "42" 7 0 0 "Is 42 the answer?"
+    in
+    ()
 
 
 
