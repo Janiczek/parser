@@ -191,18 +191,18 @@ run (Parser parse) src =
             Err (bagToList bag [])
 
 
-{-| Return a list of which parser (identified by the list of Contexts) "ate"
-what characters.
+{-| Returns a list of which parser (identified by the list of Contexts) "ate"
+what characters, along with the parsing result.
 -}
-debugRun : Parser c x a -> String -> Trace c
+debugRun : Parser c x a -> String -> (Trace c, Result (List (DeadEnd c x)) a)
 debugRun (Parser parse) src =
     List.reverse <|
         case parse { src = src, offset = 0, indent = 1, context = [], row = 1, col = 1, trace = [] } of
-            Good _ _ { trace } ->
-                trace
+            Good _ value { trace } ->
+                ( trace, Ok value )
 
-            Bad _ _ trace ->
-                trace
+            Bad _ bag trace ->
+                ( trace, Err bag )
 
 
 
