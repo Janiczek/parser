@@ -1342,8 +1342,8 @@ isSubChar =
 both ASCII characters?
 -}
 isAsciiCode : Int -> Int -> String -> Bool
-isAsciiCode =
-    Debug.todo "isAsciiCode"
+isAsciiCode code offset string =
+    charCodeAt offset string == code
 
 
 {-| Find a substring after a given offset.
