@@ -1,3 +1,11 @@
+# This is a fork
+
+Its only addition to `elm/parser` is the `Parser.Advanced.debugRun` function which returns a list of substrings and what ate them, along with the parse result.
+To do this, it relies on you tagging your parsers with the `inContext` function.
+
+TODO more info
+TODO return the result with the trace
+
 # Parser
 
 Regular expressions are quite confusing and difficult to use. This library provides a coherent alternative that handles more cases and produces clearer code.
