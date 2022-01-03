@@ -73,6 +73,7 @@ import Bitwise
 import Char
 import List.Extra
 import Set
+import String.LowLevel
 
 
 
@@ -194,15 +195,17 @@ run (Parser parse) src =
 {-| Returns a list of which parser (identified by the list of Contexts) "ate"
 what characters, along with the parsing result.
 -}
-debugRun : Parser c x a -> String -> (Trace c, Result (List (DeadEnd c x)) a)
+debugRun : Parser c x a -> String -> ( Trace c, Result (List (DeadEnd c x)) a )
 debugRun (Parser parse) src =
-    List.reverse <|
-        case parse { src = src, offset = 0, indent = 1, context = [], row = 1, col = 1, trace = [] } of
-            Good _ value { trace } ->
-                ( trace, Ok value )
+    case parse { src = src, offset = 0, indent = 1, context = [], row = 1, col = 1, trace = [] } of
+        Good _ value { trace } ->
+            ( trace, Ok value )
 
-            Bad _ bag trace ->
-                ( trace, Err bag )
+        Bad _ bag trace ->
+            ( trace
+            , -- TODO is List.reverse supposed to be here somewhere?
+              Err <| bagToList bag []
+            )
 
 
 
@@ -541,9 +544,9 @@ keyword (Token kwd expecting) =
         \s ->
             let
                 ( newOffset, newRow, newCol ) =
-                    isSubString kwd s.offset s.row s.col s.src
+                    String.LowLevel.isSubString kwd s.offset s.row s.col s.src
             in
-            if newOffset == -1 || 0 <= isSubChar (\c -> Char.isAlphaNum c || c == '_') newOffset s.src then
+            if newOffset == -1 || 0 <= String.LowLevel.isSubChar (\c -> Char.isAlphaNum c || c == '_') newOffset s.src then
                 Bad False (fromState s expecting) s.trace
 
             else
@@ -603,7 +606,7 @@ token (Token str expecting) =
         \s ->
             let
                 ( newOffset, newRow, newCol ) =
-                    isSubString str s.offset s.row s.col s.src
+                    String.LowLevel.isSubString str s.offset s.row s.col s.src
             in
             if newOffset == -1 then
                 Bad False (fromState s expecting) s.trace
@@ -741,16 +744,6 @@ consumeBase base offset string =
     consumeBaseHelp base offset string 0
 
 
-charCodeAt : Int -> String -> Int
-charCodeAt offset string =
-    string
-        |> String.slice offset (offset + 1)
-        |> String.uncons
-        |> Maybe.map (Tuple.first >> Char.toCode)
-        -- shouldn't happen?
-        |> Maybe.withDefault 0
-
-
 consumeBaseHelp : Int -> Int -> String -> Int -> ( Int, Int )
 consumeBaseHelp base offset string total =
     -- TODO perf: remember and pass the length
@@ -760,7 +753,7 @@ consumeBaseHelp base offset string total =
     else
         let
             digit =
-                charCodeAt offset string - 0x30
+                String.LowLevel.charCodeAt offset string - 0x30
         in
         if digit < 0 || base <= digit then
             ( offset, total )
@@ -775,7 +768,9 @@ consumeBaseHelp base offset string total =
 
 consumeBase16 : Int -> String -> ( Int, Int )
 consumeBase16 offset string =
-    {-
+    {- TODO for performance we could specialize this code as original
+            elm/parser did:
+
        var _Parser_consumeBase16 = F2(function(offset, string)
        {
            for (var total = 0; offset < string.length; offset++)
@@ -924,7 +919,7 @@ chompBase10Help offset string =
     else
         let
             code =
-                charCodeAt offset string
+                String.LowLevel.charCodeAt offset string
         in
         if code < 0x30 || 0x39 < code then
             offset
@@ -989,7 +984,7 @@ chompIf isGood expecting =
         \s ->
             let
                 newOffset =
-                    isSubChar isGood s.offset s.src
+                    String.LowLevel.isSubChar isGood s.offset s.src
             in
             -- not found
             if newOffset == -1 then
@@ -1039,7 +1034,7 @@ chompWhileHelp : (Char -> Bool) -> Int -> Int -> Int -> State c -> PStep c x ()
 chompWhileHelp isGood offset row col s0 =
     let
         newOffset =
-            isSubChar isGood offset s0.src
+            String.LowLevel.isSubChar isGood offset s0.src
     in
     -- no match
     if newOffset == -1 then
@@ -1077,7 +1072,7 @@ chompUntil (Token str expecting) =
         \s ->
             let
                 ( newOffset, newRow, newCol ) =
-                    findSubString str s.offset s.row s.col s.src
+                    String.LowLevel.findSubString str s.offset s.row s.col s.src
             in
             if newOffset == -1 then
                 Bad False (fromInfo newRow newCol expecting s.context) s.trace
@@ -1103,7 +1098,7 @@ chompUntilEndOr str =
         \s ->
             let
                 ( newOffset, newRow, newCol ) =
-                    Debug.todo "findSubString" str s.offset s.row s.col s.src
+                    String.LowLevel.findSubString str s.offset s.row s.col s.src
 
                 adjustedOffset =
                     if newOffset < 0 then
@@ -1292,134 +1287,12 @@ getSource =
 -- LOW-LEVEL HELPERS
 
 
-{-| When making a fast parser, you want to avoid allocation as much as
-possible. That means you never want to mess with the source string, only
-keep track of an offset into that string.
-
-You use `isSubString` like this:
-
-    isSubString "let" offset row col "let x = 4 in x"
-        --==> ( newOffset, newRow, newCol )
-
-You are looking for `"let"` at a given `offset`. On failure, the
-`newOffset` is `-1`. On success, the `newOffset` is the new offset. With
-our `"let"` example, it would be `offset + 3`.
-
-You also provide the current `row` and `col` which do not align with
-`offset` in a clean way. For example, when you see a `\n` you are at
-`row = row + 1` and `col = 1`. Furthermore, some UTF16 characters are
-two words wide, so even if there are no newlines, `offset` and `col`
-may not be equal.
-
--}
-isSubString : String -> Int -> Int -> Int -> String -> ( Int, Int, Int )
-isSubString =
-    Debug.todo "isSubString"
-
-
-{-| Again, when parsing, you want to allocate as little as possible.
-So this function lets you say:
-
-    isSubChar isSpace offset "this is the source string"
-        --==> newOffset
-
-The `(Char -> Bool)` argument is called a predicate.
-The `newOffset` value can be a few different things:
-
-  - `-1` means that the predicate failed
-  - `-2` means the predicate succeeded with a `\n`
-  - otherwise you will get `offset + 1` or `offset + 2`
-    depending on whether the UTF16 character is one or two
-    words wide.
-
--}
-isSubChar : (Char -> Bool) -> Int -> String -> Int
-isSubChar =
-    Debug.todo "isSubChar"
-
-
 {-| Check an offset in the string. Is it equal to the given Char? Are they
 both ASCII characters?
 -}
 isAsciiCode : Int -> Int -> String -> Bool
 isAsciiCode code offset string =
-    charCodeAt offset string == code
-
-
-{-| Find a substring after a given offset.
-
-    findSubString "42" offset row col "Is 42 the answer?"
-        --==> (newOffset, newRow, newCol)
-
-If `offset = 0` we would get `(3, 1, 4)`
-If `offset = 7` we would get `(-1, 1, 18)`
-
--}
-findSubString : String -> Int -> Int -> Int -> String -> ( Int, Int, Int )
-findSubString smallString offset row col bigString =
-    let
-        newOffset =
-            String.indexes smallString bigString
-                |> List.Extra.dropWhile (\index -> index < offset)
-                |> List.head
-                |> Maybe.withDefault -1
-
-        target =
-            if newOffset < 0 then
-                String.length bigString
-
-            else
-                String.length smallString + newOffset
-
-        ( newRow, newCol ) =
-            findSubStringHelp row col target offset bigString
-    in
-    ( newOffset, newRow, newCol )
-
-
-findSubStringHelp : Int -> Int -> Int -> Int -> String -> ( Int, Int )
-findSubStringHelp row col target offset bigString =
-    if offset >= target then
-        ( row, col )
-
-    else
-        let
-            code =
-                charCodeAt offset bigString
-
-            offset1 =
-                offset + 1
-
-            ( newRow, newCol, newOffset ) =
-                if code == 0x0A then
-                    ( row + 1, 1, offset1 )
-
-                else
-                    ( row
-                    , col + 1
-                    , if Bitwise.and code 0xF800 == 0xD800 then
-                        offset1 + 1
-
-                      else
-                        offset1
-                    )
-        in
-        findSubStringHelp newRow newCol target newOffset bigString
-
-
-testFindSubString =
-    let
-        _ =
-            Debug.log "test `findSubString`" ()
-    in
-    let
-        _ =
-            Debug.log "equals (3,1,4)" <| findSubString "42" 0 0 0 "Is 42 the answer?"
-
-        _ =
-            Debug.log "equals (-1,1,18)" <| findSubString "42" 7 0 0 "Is 42 the answer?"
-    in
-    ()
+    String.LowLevel.charCodeAt offset string == code
 
 
 
@@ -1441,7 +1314,7 @@ variable i =
         \s ->
             let
                 firstOffset =
-                    isSubChar i.start s.offset s.src
+                    String.LowLevel.isSubChar i.start s.offset s.src
             in
             if firstOffset == -1 then
                 Bad False (fromState s i.expecting) s.trace
@@ -1469,7 +1342,7 @@ varHelp : (Char -> Bool) -> Int -> Int -> Int -> String -> Int -> List (Located 
 varHelp isGood offset row col src indent context trace =
     let
         newOffset =
-            isSubChar isGood offset src
+            String.LowLevel.isSubChar isGood offset src
     in
     if newOffset == -1 then
         { src = src
