@@ -29,7 +29,26 @@ findSubStringTest =
 
 isSubStringTest : Test
 isSubStringTest =
-    Test.todo "isSubStringTest"
+    -- TODO test also newline handling
+    -- TODO test also the UTF-16 multiChar 0xF800 0xD800 weirdness
+    let
+        runCase : Int -> ( ( String, ( Int, Int, Int ), String ), ( Int, Int, Int ) ) -> Test
+        runCase i ( ( smallString, ( offset, row, col ), bigString ), output ) =
+            Test.test ("example " ++ String.fromInt i) <|
+                \() ->
+                    String.LowLevel.isSubString smallString offset row col bigString
+                        |> Debug.log "got"
+                        |> Expect.equal (Debug.log "needed" output)
+    in
+    Test.describe "isSubString" <|
+        List.indexedMap runCase
+            [ ( ( "42", ( 0, 0, 0 ), "Is 42 the answer?" ), ( -1, 0, 0 ) )
+            , ( ( "42", ( 3, 0, 0 ), "Is 42 the answer?" ), ( 5, 0, 2 ) )
+            , ( ( "42", ( 4, 0, 0 ), "Is 42 the answer?" ), ( -1, 0, 0 ) )
+            , ( ( "42", ( 0, 1, 1 ), "Is 42 the answer?" ), ( -1, 1, 1 ) )
+            , ( ( "42", ( 3, 1, 1 ), "Is 42 the answer?" ), ( 5, 1, 3 ) )
+            , ( ( "42", ( 4, 1, 1 ), "Is 42 the answer?" ), ( -1, 1, 1 ) )
+            ]
 
 
 isSubCharTest : Test

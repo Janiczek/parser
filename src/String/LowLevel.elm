@@ -110,8 +110,92 @@ may not be equal.
 
 -}
 isSubString : String -> Int -> Int -> Int -> String -> ( Int, Int, Int )
-isSubString =
-    Debug.todo "isSubString"
+isSubString smallString offset row col bigString =
+    let
+        smallLength : Int
+        smallLength =
+            String.length smallString
+
+        isLongEnough : Bool
+        isLongEnough =
+            offset + smallLength <= String.length bigString
+
+        smallCodes : List Int
+        smallCodes =
+            smallString
+                |> String.toList
+                |> List.map Char.toCode
+
+        slice : String
+        slice =
+            bigString
+                |> String.slice offset (offset + smallLength)
+
+        bigCodes : List Int
+        bigCodes =
+            slice
+                |> String.toList
+                |> List.map Char.toCode
+
+        go : List Int -> List Int -> Bool -> ( Int, Int, Int ) -> ( Int, Int, Int )
+        go smallCodes_ bigCodes_ isGood_ ( offset_, row_, col_ ) =
+            if isGood_ then
+                case ( smallCodes_, bigCodes_ ) of
+                    ( [], [] ) ->
+                        ( offset_, row_, col_ )
+
+                    ( s :: ss, b :: bs ) ->
+                        let
+                            newIsGoodPart1 =
+                                s == b
+
+                            newOffsetPart1 =
+                                offset_ + 1
+
+                            isNewline =
+                                s == 0x0A
+
+                            ( newOffset, newIsGood, ( restSmall, restBig ) ) =
+                                if newIsGoodPart1 && not isNewline && isWideChar s then
+                                    let
+                                        newOffset_ =
+                                            newOffsetPart1 + 1
+                                    in
+                                    case ( ss, bs ) of
+                                        ( s_ :: sss, b_ :: bss ) ->
+                                            ( newOffset_, s_ == b_, ( sss, bss ) )
+
+                                        _ ->
+                                            ( newOffset_, False, ( ss, bs ) )
+
+                                else
+                                    ( newOffsetPart1, newIsGoodPart1, ( ss, bs ) )
+
+                            ( newRow, newCol ) =
+                                if newIsGood then
+                                    if isNewline then
+                                        ( row_ + 1, 1 )
+
+                                    else
+                                        ( row_, col_ + 1 )
+
+                                else
+                                    ( row_, col_ )
+                        in
+                        go restSmall restBig newIsGood ( newOffset, newRow, newCol )
+
+                    _ ->
+                        ( -1, row_, col_ )
+
+            else
+                ( -1, row_, col_ )
+    in
+    go smallCodes bigCodes isLongEnough ( offset, row, col )
+
+
+isWideChar : Int -> Bool
+isWideChar code =
+    Bitwise.and 0xF800 code == 0xD800
 
 
 {-| Again, when parsing, you want to allocate as little as possible.
